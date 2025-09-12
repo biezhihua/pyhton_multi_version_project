@@ -1,0 +1,14 @@
+# main_64 配置
+# main_64/config.yaml
+modules:
+  64_bit:
+    port: 9001
+    enabled: true
+  32_bit:
+    port: 9002
+    enabled: true
+    python_path: "C:/Python32/python.exe"  # 可选的32位Python路径
+
+logging:
+  level: INFO
+  file: null  # 设置为文件路径可启用文件日志
