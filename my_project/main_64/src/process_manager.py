@@ -6,23 +6,13 @@ import time
 import signal
 import threading
 from pathlib import Path
-import yaml
 from communication import SocketClient
 
 class ProcessManager:
     def __init__(self):
         self.processes = {}
         self.base_dir = Path(__file__).parent.parent.parent
-        self.config = self._load_config()
 
-    def _load_config(self):
-        """加载主工程配置文件"""
-        config_path = self.base_dir / "main_64" / "config.yaml"
-        if config_path.exists():
-            with open(config_path, 'r', encoding='utf-8') as f:
-                return yaml.safe_load(f)
-        return {}
-        
     def start_module(self, module_name, python_executable=None):
         """启动指定模块"""
         module_path = self.base_dir / module_name / "src" / f"{module_name}.py"
@@ -32,14 +22,11 @@ class ProcessManager:
 
         # 确定Python解释器
         if python_executable is None:
-            python_executable = sys.executable
-            if module_name == "module_32":
-                # 优先从配置文件读取32位Python路径
-                python_path = self.config.get('modules', {}).get('32_bit', {}).get('python_path')
-                if python_path and os.path.exists(python_path):
-                    python_executable = python_path
-                else:
-                    python_executable = self._find_32bit_python()
+            # python_executable = sys.executable
+            if module_name == "module_64":
+                python_executable = self._find_64bit_python()
+            elif module_name == "module_32":
+                python_executable = self._find_32bit_python()
 
         # 启动进程
         env = os.environ.copy()
@@ -64,6 +51,21 @@ class ProcessManager:
         ).start()
 
         return process
+    
+    def _find_64bit_python(self):
+        """查找64位Python解释器"""
+        # 这里可以根据实际情况调整查找逻辑
+        possible_paths = [
+            "C:/Python64/python.exe",
+            "C:/Python64-64/python.exe",
+            # 添加其他可能的路径
+        ]
+        
+        for path in possible_paths:
+            if os.path.exists(path):
+                return path
+        
+        raise Exception("64-bit Python not found. Please specify the path manually.")
     
     def _find_32bit_python(self):
         """查找32位Python解释器"""
