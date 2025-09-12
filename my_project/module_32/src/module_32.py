@@ -11,10 +11,6 @@ shared_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 if shared_path not in sys.path:
     sys.path.insert(0, shared_path)
 
-# 添加共享目录到路径
-shared_path = Path(__file__).parent.parent.parent / "shared"
-sys.path.insert(0, str(shared_path))
-
 from shared.utils.communication import SocketServer
 from shared.utils.logger import get_logger
 

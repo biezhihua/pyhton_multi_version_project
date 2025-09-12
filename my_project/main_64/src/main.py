@@ -4,10 +4,6 @@ import signal
 import sys
 from pathlib import Path
 
-# 添加共享目录到路径
-shared_path = Path(__file__).parent.parent.parent / "shared"
-sys.path.insert(0, str(shared_path))
-
 from shared.utils.process_manager import ProcessManager
 from shared.utils.communication import SocketClient
 from shared.utils.logger import get_logger
@@ -15,7 +11,6 @@ from shared.utils.logger import get_logger
 logger = get_logger("main")
 
 process_manager = ProcessManager()
-
 
 def signal_handler(sig, frame):
     """处理终止信号"""
