@@ -6,13 +6,23 @@ import time
 import signal
 import threading
 from pathlib import Path
-from communication import SocketClient
+from shared.utils.communication import SocketClient
+import yaml
 
 class ProcessManager:
     def __init__(self):
         self.processes = {}
         self.base_dir = Path(__file__).parent.parent.parent
+        self.config = self._load_config()
 
+    def _load_config(self):
+        """加载主工程配置文件"""
+        config_path = self.base_dir / "main_64" / "config.yaml"
+        if config_path.exists():
+            with open(config_path, 'r', encoding='utf-8') as f:
+                return yaml.safe_load(f)
+        return {}
+    
     def start_module(self, module_name, python_executable=None):
         """启动指定模块"""
         module_path = self.base_dir / module_name / "src" / f"{module_name}.py"
@@ -22,13 +32,20 @@ class ProcessManager:
 
         # 确定Python解释器
         if python_executable is None:
-            # python_executable = sys.executable
             if module_name == "module_64":
-                python_executable = self._find_64bit_python()
-            elif module_name == "module_32":
-                python_executable = self._find_32bit_python()
+                python_path = self.config.get('modules', {}).get('64_bit', {}).get('python_path')
+                if python_path and os.path.exists(python_path):
+                    python_executable = python_path
+                else:
+                    python_executable = self._find_64bit_python()
 
-        # 启动进程
+            if module_name == "module_32":
+                python_path = self.config.get('modules', {}).get('32_bit', {}).get('python_path')
+                if python_path and os.path.exists(python_path):
+                    python_executable = python_path
+                else:
+                    python_executable = self._find_32bit_python()
+
         env = os.environ.copy()
         env["PYTHONPATH"] = str(self.base_dir / "shared") + os.pathsep + env.get("PYTHONPATH", "")
 
@@ -43,7 +60,6 @@ class ProcessManager:
 
         self.processes[module_name] = process
 
-        # 启动输出监控线程
         threading.Thread(
             target=self._monitor_output,
             args=(module_name, process),
@@ -53,70 +69,44 @@ class ProcessManager:
         return process
     
     def _find_64bit_python(self):
-        """查找64位Python解释器"""
-        # 这里可以根据实际情况调整查找逻辑
         possible_paths = [
             "C:/Python64/python.exe",
             "C:/Python64-64/python.exe",
-            # 添加其他可能的路径
         ]
-        
         for path in possible_paths:
             if os.path.exists(path):
                 return path
-        
         raise Exception("64-bit Python not found. Please specify the path manually.")
     
     def _find_32bit_python(self):
-        """查找32位Python解释器"""
-        # 这里可以根据实际情况调整查找逻辑
         possible_paths = [
             "C:/Python32/python.exe",
             "C:/Python32-32/python.exe",
-            # 添加其他可能的路径
         ]
-        
         for path in possible_paths:
             if os.path.exists(path):
                 return path
-        
         raise Exception("32-bit Python not found. Please specify the path manually.")
     
     def _monitor_output(self, module_name, process):
-        """监控子进程输出"""
-        while True:
-            output = process.stdout.readline()
-            if output == '' and process.poll() is not None:
-                break
-            if output:
-                print(f"[{module_name}] {output.strip()}")
-        
-        # 检查是否有错误输出
-        error_output = process.stderr.read()
-        if error_output:
-            print(f"[{module_name} ERROR] {error_output}")
+        for line in process.stdout:
+            print(f"[{module_name} INFO] {line.strip()}")
+        for line in process.stderr:
+            print(f"[{module_name} ERROR] {line.strip()}")
     
     def stop_module(self, module_name):
-        """停止指定模块"""
-        if module_name in self.processes:
-            process = self.processes[module_name]
+        process = self.processes.get(module_name)
+        if process:
             process.terminate()
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill()
+            process.wait()
             del self.processes[module_name]
     
     def stop_all(self):
-        """停止所有模块"""
         for module_name in list(self.processes.keys()):
             self.stop_module(module_name)
-    
+
     def is_running(self, module_name):
         """检查模块是否运行"""
         if module_name not in self.processes:
             return False
         return self.processes[module_name].poll() is None
-
-# 单例模式
-process_manager = ProcessManager()

@@ -1,12 +1,21 @@
 # 32位模块实现
+import os
 import sys
 from pathlib import Path
+
+main_64_src = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../main_64/src'))
+if main_64_src not in sys.path:
+    sys.path.insert(0, main_64_src)
+
+shared_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+if shared_path not in sys.path:
+    sys.path.insert(0, shared_path)
 
 # 添加共享目录到路径
 shared_path = Path(__file__).parent.parent.parent / "shared"
 sys.path.insert(0, str(shared_path))
 
-from communication import SocketServer
+from shared.utils.communication import SocketServer
 from shared.utils.logger import get_logger
 
 logger = get_logger("module_32")

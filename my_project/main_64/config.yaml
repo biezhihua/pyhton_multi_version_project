@@ -4,9 +4,11 @@ modules:
   64_bit:
     port: 9001
     enabled: true
+    python_path: "E:/Projects/pyhton_multi_version_project/my_project/module_64/.venv/Scripts/python.exe"
   32_bit:
     port: 9002
     enabled: true
+    python_path: "E:/Projects/pyhton_multi_version_project/my_project/module_32/.venv/Scripts/python.exe"
 
 logging:
   level: INFO

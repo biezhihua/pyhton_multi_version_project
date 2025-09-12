@@ -1,5 +1,6 @@
 {
     "python.analysis.extraPaths": [
-        "./main_64/src"
+        "./main_64/src",
+        "./shared/utils"
     ]
 }
