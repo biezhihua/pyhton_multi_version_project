@@ -1,0 +1,21 @@
+{
+    "editor.fontSize": 13,
+    "window.zoomLevel": 0.5,
+    "editor.fontFamily": "Consolas, 'Courier New', monospace",
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.black-formatter",
+        "editor.formatOnSave": true
+    },
+    "black-formatter.args": [
+        "--line-length",
+        "500"
+    ],
+    "mypy.runUsingActiveInterpreter": true,
+    "mypy.enabled": false,
+    "python.analysis.extraPaths": [
+        "./src"
+    ],
+    "python.autoComplete.extraPaths": [
+        "./src"
+    ]
+}
