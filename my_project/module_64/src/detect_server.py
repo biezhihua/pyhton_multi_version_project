@@ -4,6 +4,7 @@ import uvicorn
 import cv2
 import numpy as np
 import onnxruntime
+import time
 
 from PIL import Image, ImageDraw, ImageFont
 import torch
@@ -59,60 +60,55 @@ def check_img_sim_by_data(image1, image2) -> float:
     return float(outputs[0][0][0])
 
 
-@app.post("/compare")
-async def compare_images(image1: UploadFile = File(...), image2: UploadFile = File(...)):
-    try:
-        img1_bytes = await image1.read()
-        img2_bytes = await image2.read()
-        img1_np = np.frombuffer(img1_bytes, np.uint8)
-        img2_np = np.frombuffer(img2_bytes, np.uint8)
-        img1 = cv2.imdecode(img1_np, cv2.IMREAD_COLOR)
-        img2 = cv2.imdecode(img2_np, cv2.IMREAD_COLOR)
-        if img1 is None or img2 is None:
-            return JSONResponse(status_code=400, content={"error": "Invalid image data."})
-        result = check_img_sim_by_data(img1, img2)
-        return {"result": result}
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
-
-
 # 新API: /detect_and_compare
 def detect_and_compare_local(text, img_cv):
     """
-    本地调用验证方法，text为字符，img_cv为OpenCV图片（numpy数组），返回识别与对比结果。
+    本地调用验证方法。
+    参数:
+        text: 要检测的字符
+        img_cv: OpenCV图片（numpy数组）
+    返回:
+        检测框、置信度、类别和与文字图片的相似度
     """
     try:
-        # 1. 生成文字图片（直接内存）
+        # 1. 生成文字图片（直接内存，作为对比模板）
         char_img_cv = text_to_image(text)
         if char_img_cv is None:
             return {"error": "生成文字图片失败"}
 
-        # 2. 检查图片
+        # 2. 检查输入图片是否有效
         if img_cv is None:
             return {"error": "上传图片无效"}
 
-        # 4. 加载YOLOv5模型并识别
+        # 3. 加载YOLOv5模型（本地已训练模型）并进行目标检测
         model = torch.hub.load(
-            repo_or_dir="E:\Projects\yolov5",
+            repo_or_dir="E:\Projects\yolov5",  # YOLOv5源码路径
             model="custom",
             path="mhxy_text.pt",
             force_reload=True,
             source="local",
         )
-
-        model.conf = 0.1
-        model.iou = 0.45
-        model.classes = None
-        model.agnostic = False
+        # 设置模型参数
+        model.conf = 0.1  # 置信度阈值
+        model.iou = 0.45  # IOU阈值
+        model.classes = None  # 所有类别
+        model.agnostic = False  # 类别无关NMS
         model.multi_label = False
-        model.max_det = 1000
+        model.max_det = 1000  # 最大检测数
 
+        # 4. 设置推理设备（优先使用GPU）
         device = torch.device("cuda:0" if torch.cuda.is_available() and "cuda" in "cuda:0" else "cpu")
         model.to(device)
 
+        # 5. 检测图片，获取所有检测框
+
+        start = time.time()
         results = model(img_cv, size=640)
         boxes = results.xyxy[0].cpu().numpy()  # [x1, y1, x2, y2, conf, cls]
+        end = time.time()
+        print("图片检测耗时: {:.3f} 秒".format(end - start))
 
+        # 6. 遍历所有检测框，分别与文字图片对比相似度
         compare_results = []
         max_sim = -float("inf")
         max_crop_img = None
@@ -123,7 +119,11 @@ def detect_and_compare_local(text, img_cv):
             if crop_img.size == 0:
                 continue
             try:
+                # 计算相似度分数
+                start = time.time()
                 sim = check_img_sim_by_data(char_img_cv, crop_img)
+                end = time.time()
+                print("相似度检测耗时: {:.3f} 秒".format(end - start) + " sim: {:.3f}".format(sim))
             except Exception as e:
                 sim = None
             compare_results.append(
@@ -139,7 +139,8 @@ def detect_and_compare_local(text, img_cv):
                 max_sim = sim
                 max_crop_img = crop_img
                 max_box = [int(x1), int(y1), int(x2), int(y2)]
-        # 保存sim值最高的区域截图
+
+        # 7. 保存sim值最高的区域截图到本地
         if max_crop_img is not None:
             import tempfile
             import datetime
@@ -147,6 +148,8 @@ def detect_and_compare_local(text, img_cv):
             filename = f"tmp_{text}_max_sim_crop_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
             cv2.imwrite(filename, max_crop_img)
             print(f"已保存sim值最高的区域截图: {filename}, box: {max_box}, sim: {max_sim}")
+
+        # 8. 返回所有检测结果
         return {"results": compare_results}
     except Exception as e:
         return {"error": str(e)}
@@ -154,7 +157,7 @@ def detect_and_compare_local(text, img_cv):
 
 # FastAPI接口封装
 @app.post("/detect_and_compare")
-async def detect_and_compare(text: str = File(...), img: UploadFile = File(...), img_size: int = 640, detect_rect: str = None):
+async def detect_and_compare(text: str = File(...), img: UploadFile = File(...)):
     """
     text: 字符
     img: 图片
@@ -165,10 +168,7 @@ async def detect_and_compare(text: str = File(...), img: UploadFile = File(...),
         img_bytes = await img.read()
         img_np = np.frombuffer(img_bytes, np.uint8)
         img_cv = cv2.imdecode(img_np, cv2.IMREAD_COLOR)
-        rect = None
-        if detect_rect:
-            rect = [int(v) for v in detect_rect.split(",")]
-        result = detect_and_compare_local(text, img_cv, detect_rect=rect)
+        result = detect_and_compare_local(text, img_cv)
         if "error" in result:
             return JSONResponse(status_code=500, content=result)
         return result
@@ -177,4 +177,4 @@ async def detect_and_compare(text: str = File(...), img: UploadFile = File(...),
 
 
 if __name__ == "__main__":
-    uvicorn.run("image_server:app", host="0.0.0.0", port=5000)
+    uvicorn.run("detect_server:app", host="0.0.0.0", port=5000)

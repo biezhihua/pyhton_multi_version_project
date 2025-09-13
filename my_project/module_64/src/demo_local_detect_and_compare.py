@@ -1,5 +1,5 @@
 import cv2
-from image_server import detect_and_compare_local
+from detect_server import detect_and_compare_local
 
 if __name__ == "__main__":
     # 要检测的文字
