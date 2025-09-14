@@ -8,6 +8,9 @@ import onnxruntime
 from PIL import Image, ImageDraw, ImageFont
 import torch
 import os
+import os
+import datetime
+from PIL import Image
 
 # 日志配置
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -49,9 +52,9 @@ def text_to_image(char, font_path="simsun.ttc", image_size=(100, 100), font_size
     y = (image_size[1] - text_height) / 2
     draw.text((x, y), char, fill="black", font=font)
     # 保存到本地临时文件
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".png", prefix=f"tmp_{char}_img_", dir=".") as tmp:
-        img.save(tmp.name)
-        logger.info(f"生成的字符图片已保存到: {tmp.name}")
+    # with tempfile.NamedTemporaryFile(delete=False, suffix=".png", prefix=f"tmp_{char}_img_", dir=".") as tmp:
+    #     img.save(tmp.name)
+    #     logger.info(f"生成的字符图片已保存到: {tmp.name}")
     # 返回 numpy 数组
     return np.array(img)
 
@@ -73,9 +76,10 @@ def check_img_sim_by_data(image1, image2) -> float:
     input2 = np.expand_dims(input2, axis=0)
 
     outputs = ort_session.run(None, {"x1": input1, "x2": input2})
-    ret = float(outputs[0][0][0])
-    ret2 = round(ret, 3)
-    logger.info(f"相似度分数: ret={ret} ret2={ret2}")
+    ret1 = float(outputs[0][0][0])
+    # ret1=8.046627044677734e-06
+    ret2 = max(ret1, 0.0001)
+    logger.info(f"相似度分数: ret1={ret1} ret2={ret2}")
     return ret2
 
 
@@ -128,13 +132,10 @@ def detect_and_compare_local(chengyu, check_text, img_cv):
         boxes = results.xyxy[0].cpu().numpy()  # [x1, y1, x2, y2, conf, cls]
         end = time.time()
         logger.info("图片检测耗时: {:.3f} 秒".format(end - start))
-        logger.info("boxes count: {}".format(len(boxes)))
+        logger.info("检测出文字数量 count: {}".format(len(boxes)))
 
         # 6. 遍历所有检测框，分别与文字图片对比相似度
         compare_results = []
-        max_sim = -float("inf")
-        max_crop_img = None
-        max_box = None
         for box in boxes:
             x1, y1, x2, y2, conf, cls = box
             crop_img = img_cv[int(y1) : int(y2), int(x1) : int(x2)]
@@ -148,28 +149,26 @@ def detect_and_compare_local(chengyu, check_text, img_cv):
                 logger.info("相似度检测耗时: {:.3f} 秒".format(end - start) + " sim: {:.3f}".format(sim))
             except Exception as e:
                 sim = None
-            compare_results.append(
-                {
-                    "box": [float(x1), float(y1), float(x2), float(y2)],
-                    "conf": float(conf),
-                    "cls": int(cls),
-                    "similarity": sim,
-                }
-            )
-            # 记录最大sim值的区域
-            if sim is not None and sim > max_sim:
-                max_sim = sim
-                max_crop_img = crop_img
-                max_box = [int(x1), int(y1), int(x2), int(y2)]
+            item = {
+                "box": [int(x1), int(y1), int(x2), int(y2)],
+                "conf": float(conf),
+                "cls": int(cls),
+                "similarity": sim,
+            }
 
-        # 7. 保存sim值最高的区域截图到本地
-        if max_crop_img is not None:
-            import tempfile
-            import datetime
+            compare_results.append(item)
 
-            filename = f"tmp_{check_text}_max_sim_crop_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-            cv2.imwrite(filename, max_crop_img)
-            logger.info(f"已保存sim值最高的区域截图: {filename}, box: {max_box}, sim: {max_sim}")
+            logger.info(f"相似度检查结果: {item}")
+
+            sim_check = 0.3
+            if sim is not None and sim > sim_check:
+                # 保存检测到的文字图片
+                save_text_img("imgs_detected", chengyu, check_text, crop_img, sim)
+            else:
+                logger.info(f"相似度低于阈值，未保存图片: sim={sim} sim_check={sim_check}")
+
+            # 无论相似度高低，都保存一份到另一个目录
+            save_text_img("imgs_detected_all", chengyu, check_text, crop_img, sim)
 
         # 8. 返回所有检测结果
         ret = {"results": compare_results}
@@ -195,12 +194,50 @@ async def detect_and_compare(chengyu: str = File(...), check_text: str = File(..
         img_bytes = await img.read()
         img_np = np.frombuffer(img_bytes, np.uint8)
         img_cv = cv2.imdecode(img_np, cv2.IMREAD_COLOR)
+        save_img(chengyu, img_cv)
         result = detect_and_compare_local(chengyu, check_text, img_cv)
         if "error" in result:
             return JSONResponse(status_code=500, content=result)
         return result
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+def save_text_img(root_path, chengyu, check_text, img_cv, sim):
+
+    base_dir = os.path.join(os.getcwd(), root_path)
+    os.makedirs(base_dir, exist_ok=True)
+
+    base_dir = os.path.join(base_dir, chengyu)
+    os.makedirs(base_dir, exist_ok=True)
+
+    sub_dir = os.path.join(base_dir, str(check_text))
+    os.makedirs(sub_dir, exist_ok=True)
+
+    filename = f"{datetime.datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_{round(sim,4)}.jpg"
+    save_path = os.path.join(sub_dir, filename)
+    # cv2.imwrite(save_path, img_cv)
+    img_rgb = cv2.cvtColor(img_cv, cv2.COLOR_BGR2RGB)
+    Image.fromarray(img_rgb).save(save_path)
+
+    logger.info(f"已保存Text图片到本地 :  {save_path}")
+
+
+def save_img(chengyu, img_cv):
+    # 保存上传图片到当前工程本地目录
+    base_dir = os.path.join(os.getcwd(), "imgs_uploaded")
+    os.makedirs(base_dir, exist_ok=True)
+
+    sub_dir = os.path.join(base_dir, chengyu)
+    os.makedirs(sub_dir, exist_ok=True)
+
+    filename = f"{datetime.datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.jpg"
+    save_path = os.path.join(sub_dir, filename)
+    # cv2.imwrite(save_path, img_cv)
+    img_rgb = cv2.cvtColor(img_cv, cv2.COLOR_BGR2RGB)
+    Image.fromarray(img_rgb).save(save_path)
+
+    logger.info(f"已保存上传图片到本地: {save_path}")
 
 
 if __name__ == "__main__":
