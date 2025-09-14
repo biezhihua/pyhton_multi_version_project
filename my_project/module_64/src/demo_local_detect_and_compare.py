@@ -2,6 +2,7 @@ import cv2
 from detect_server import detect_and_compare_local
 
 if __name__ == "__main__":
+    chengyu = "断章取义"
     # 要检测的文字
     text = "断"
     # 要检测的图片路径

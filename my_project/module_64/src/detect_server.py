@@ -1,3 +1,19 @@
+import logging
+from fastapi import FastAPI, File, UploadFile
+from fastapi.responses import JSONResponse
+import uvicorn
+import cv2
+import numpy as np
+import onnxruntime
+from PIL import Image, ImageDraw, ImageFont
+import torch
+import os
+
+# 日志配置
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logger = logging.getLogger(__name__)
+
+app = FastAPI()
 from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import JSONResponse
 import uvicorn
@@ -25,7 +41,7 @@ def text_to_image(char, font_path="simsun.ttc", image_size=(100, 100), font_size
         font = ImageFont.truetype(font_path, font_size)
     except IOError:
         font = ImageFont.load_default()
-        print(f"警告: 无法加载字体 {font_path}, 使用默认字体")
+        logger.info(f"警告: 无法加载字体 {font_path}, 使用默认字体")
     bbox = draw.textbbox((0, 0), char, font=font)
     text_width = bbox[2] - bbox[0]
     text_height = bbox[3] - bbox[1]
@@ -35,7 +51,7 @@ def text_to_image(char, font_path="simsun.ttc", image_size=(100, 100), font_size
     # 保存到本地临时文件
     with tempfile.NamedTemporaryFile(delete=False, suffix=".png", prefix=f"tmp_{char}_img_", dir=".") as tmp:
         img.save(tmp.name)
-        print(f"生成的字符图片已保存到: {tmp.name}")
+        logger.info(f"生成的字符图片已保存到: {tmp.name}")
     # 返回 numpy 数组
     return np.array(img)
 
@@ -57,11 +73,14 @@ def check_img_sim_by_data(image1, image2) -> float:
     input2 = np.expand_dims(input2, axis=0)
 
     outputs = ort_session.run(None, {"x1": input1, "x2": input2})
-    return float(outputs[0][0][0])
+    ret = float(outputs[0][0][0])
+    ret2 = round(ret, 3)
+    logger.info(f"相似度分数: ret={ret} ret2={ret2}")
+    return ret2
 
 
 # 新API: /detect_and_compare
-def detect_and_compare_local(text, img_cv):
+def detect_and_compare_local(chengyu, check_text, img_cv):
     """
     本地调用验证方法。
     参数:
@@ -71,8 +90,10 @@ def detect_and_compare_local(text, img_cv):
         检测框、置信度、类别和与文字图片的相似度
     """
     try:
+        logger.info(f"开始检测和比较, text={check_text}")
+
         # 1. 生成文字图片（直接内存，作为对比模板）
-        char_img_cv = text_to_image(text)
+        char_img_cv = text_to_image(check_text)
         if char_img_cv is None:
             return {"error": "生成文字图片失败"}
 
@@ -106,7 +127,8 @@ def detect_and_compare_local(text, img_cv):
         results = model(img_cv, size=640)
         boxes = results.xyxy[0].cpu().numpy()  # [x1, y1, x2, y2, conf, cls]
         end = time.time()
-        print("图片检测耗时: {:.3f} 秒".format(end - start))
+        logger.info("图片检测耗时: {:.3f} 秒".format(end - start))
+        logger.info("boxes count: {}".format(len(boxes)))
 
         # 6. 遍历所有检测框，分别与文字图片对比相似度
         compare_results = []
@@ -123,7 +145,7 @@ def detect_and_compare_local(text, img_cv):
                 start = time.time()
                 sim = check_img_sim_by_data(char_img_cv, crop_img)
                 end = time.time()
-                print("相似度检测耗时: {:.3f} 秒".format(end - start) + " sim: {:.3f}".format(sim))
+                logger.info("相似度检测耗时: {:.3f} 秒".format(end - start) + " sim: {:.3f}".format(sim))
             except Exception as e:
                 sim = None
             compare_results.append(
@@ -145,19 +167,24 @@ def detect_and_compare_local(text, img_cv):
             import tempfile
             import datetime
 
-            filename = f"tmp_{text}_max_sim_crop_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+            filename = f"tmp_{check_text}_max_sim_crop_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
             cv2.imwrite(filename, max_crop_img)
-            print(f"已保存sim值最高的区域截图: {filename}, box: {max_box}, sim: {max_sim}")
+            logger.info(f"已保存sim值最高的区域截图: {filename}, box: {max_box}, sim: {max_sim}")
 
         # 8. 返回所有检测结果
-        return {"results": compare_results}
+        ret = {"results": compare_results}
+
+        logger.info(f"ret: {ret}")
+
+        return ret
     except Exception as e:
+        logger.error(f"检测和比较失败: {e}")
         return {"error": str(e)}
 
 
 # FastAPI接口封装
 @app.post("/detect_and_compare")
-async def detect_and_compare(text: str = File(...), img: UploadFile = File(...)):
+async def detect_and_compare(chengyu: str = File(...), check_text: str = File(...), img: UploadFile = File(...)):
     """
     text: 字符
     img: 图片
@@ -168,7 +195,7 @@ async def detect_and_compare(text: str = File(...), img: UploadFile = File(...))
         img_bytes = await img.read()
         img_np = np.frombuffer(img_bytes, np.uint8)
         img_cv = cv2.imdecode(img_np, cv2.IMREAD_COLOR)
-        result = detect_and_compare_local(text, img_cv)
+        result = detect_and_compare_local(chengyu, check_text, img_cv)
         if "error" in result:
             return JSONResponse(status_code=500, content=result)
         return result
