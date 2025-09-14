@@ -134,6 +134,12 @@ def detect_and_compare_local(chengyu, check_text, img_cv):
         logger.info("图片检测耗时: {:.3f} 秒".format(end - start))
         logger.info("检测出文字数量 count: {}".format(len(boxes)))
 
+        # 预期是能检测出4个文字
+        if len(boxes) < 4:
+            save_img("imgs_uploaded_error", chengyu, img_cv)
+        else:
+            save_img("imgs_uploaded_ok", chengyu, img_cv)
+
         # 6. 遍历所有检测框，分别与文字图片对比相似度
         compare_results = []
         for box in boxes:
@@ -163,7 +169,7 @@ def detect_and_compare_local(chengyu, check_text, img_cv):
             sim_check = 0.3
             if sim is not None and sim > sim_check:
                 # 保存检测到的文字图片
-                save_text_img("imgs_detected", chengyu, check_text, crop_img, sim)
+                save_text_img("imgs_detected_checked", chengyu, check_text, crop_img, sim)
             else:
                 logger.info(f"相似度低于阈值，未保存图片: sim={sim} sim_check={sim_check}")
 
@@ -194,7 +200,6 @@ async def detect_and_compare(chengyu: str = File(...), check_text: str = File(..
         img_bytes = await img.read()
         img_np = np.frombuffer(img_bytes, np.uint8)
         img_cv = cv2.imdecode(img_np, cv2.IMREAD_COLOR)
-        save_img(chengyu, img_cv)
         result = detect_and_compare_local(chengyu, check_text, img_cv)
         if "error" in result:
             return JSONResponse(status_code=500, content=result)
@@ -223,9 +228,9 @@ def save_text_img(root_path, chengyu, check_text, img_cv, sim):
     logger.info(f"已保存Text图片到本地 :  {save_path}")
 
 
-def save_img(chengyu, img_cv):
+def save_img(root_path, chengyu, img_cv):
     # 保存上传图片到当前工程本地目录
-    base_dir = os.path.join(os.getcwd(), "imgs_uploaded")
+    base_dir = os.path.join(os.getcwd(), root_path)
     os.makedirs(base_dir, exist_ok=True)
 
     sub_dir = os.path.join(base_dir, chengyu)
