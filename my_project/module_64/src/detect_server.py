@@ -60,7 +60,7 @@ def text_to_image(char, font_path="simsun.ttc", image_size=(100, 100), font_size
 
 
 def check_img_sim_by_data(image1, image2) -> float:
-    onnx_model_path = "mhxy_text_sim_model_20250915003849.onnx"
+    onnx_model_path = "mhxy_text_sim_model_20250916.onnx"
     ort_session = onnxruntime.InferenceSession(onnx_model_path)
 
     image1 = cv2.cvtColor(image1, cv2.COLOR_BGR2RGB)
@@ -169,7 +169,7 @@ def detect_and_compare_local(chengyu, check_text, img_cv):
             sim_check = 0.3
             if sim is not None and sim > sim_check:
                 # 保存检测到的文字图片
-                save_text_img("imgs_detected_checked", chengyu, check_text, crop_img, sim)
+                save_text_img("imgs_detected_success", chengyu, check_text, crop_img, sim)
             else:
                 logger.info(f"相似度低于阈值，未保存图片: sim={sim} sim_check={sim_check}")
 
