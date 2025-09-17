@@ -169,12 +169,12 @@ def detect_and_compare_local(chengyu, check_text, img_cv):
             sim_check = 0.3
             if sim is not None and sim > sim_check:
                 # 保存检测到的文字图片
-                save_text_img("imgs_detected_success", chengyu, check_text, crop_img, sim)
+                save_text_img("imgs_detected_success", None, check_text, crop_img, sim)
             else:
                 logger.info(f"相似度低于阈值，未保存图片: sim={sim} sim_check={sim_check}")
 
             # 无论相似度高低，都保存一份到另一个目录
-            save_text_img("imgs_detected_all", chengyu, check_text, crop_img, sim)
+            save_text_img("imgs_detected_all", chengyu, None, crop_img, sim)
 
         # 8. 返回所有检测结果
         ret = {"results": compare_results}
@@ -213,14 +213,16 @@ def save_text_img(root_path, chengyu, check_text, img_cv, sim):
     base_dir = os.path.join(os.getcwd(), root_path)
     os.makedirs(base_dir, exist_ok=True)
 
-    base_dir = os.path.join(base_dir, chengyu)
-    os.makedirs(base_dir, exist_ok=True)
+    if chengyu and len(chengyu) > 0:
+        base_dir = os.path.join(base_dir, chengyu)
+        os.makedirs(base_dir, exist_ok=True)
 
-    sub_dir = os.path.join(base_dir, str(check_text))
-    os.makedirs(sub_dir, exist_ok=True)
+    if check_text and len(check_text) > 0:
+        base_dir = os.path.join(base_dir, str(check_text))
+        os.makedirs(base_dir, exist_ok=True)
 
     filename = f"{datetime.datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_{round(sim,4)}.jpg"
-    save_path = os.path.join(sub_dir, filename)
+    save_path = os.path.join(base_dir, filename)
     # cv2.imwrite(save_path, img_cv)
     img_rgb = cv2.cvtColor(img_cv, cv2.COLOR_BGR2RGB)
     Image.fromarray(img_rgb).save(save_path)
