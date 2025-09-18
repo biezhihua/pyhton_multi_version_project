@@ -96,6 +96,8 @@ def detect_and_compare_local(chengyu, check_text, img_cv):
     try:
         logger.info(f"开始检测和比较, text={check_text}")
 
+        start_time = time.time()
+
         # 1. 生成文字图片（直接内存，作为对比模板）
         char_img_cv = text_to_image(check_text)
         if char_img_cv is None:
@@ -105,25 +107,27 @@ def detect_and_compare_local(chengyu, check_text, img_cv):
         if img_cv is None:
             return {"error": "上传图片无效"}
 
-        # 3. 加载YOLOv5模型（本地已训练模型）并进行目标检测
-        model = torch.hub.load(
-            repo_or_dir="E:\Projects\yolov5",  # YOLOv5源码路径
-            model="custom",
-            path="mhxy_text.pt",
-            force_reload=True,
-            source="local",
-        )
-        # 设置模型参数
-        model.conf = 0.1  # 置信度阈值
-        model.iou = 0.45  # IOU阈值
-        model.classes = None  # 所有类别
-        model.agnostic = False  # 类别无关NMS
-        model.multi_label = False
-        model.max_det = 1000  # 最大检测数
-
-        # 4. 设置推理设备（优先使用GPU）
-        device = torch.device("cuda:0" if torch.cuda.is_available() and "cuda" in "cuda:0" else "cpu")
-        model.to(device)
+        # 3. 使用全局已加载的YOLOv5模型（本地已训练模型）进行目标检测
+        global yolo_model, yolo_device
+        if "yolo_model" not in globals():
+            logger.info("正在加载YOLOv5模型...")
+            yolo_model = torch.hub.load(
+                repo_or_dir="E:\Projects\yolov5",  # YOLOv5源码路径
+                model="custom",
+                path="mhxy_text.pt",
+                force_reload=True,
+                source="local",
+            )
+            yolo_model.conf = 0.1  # 置信度阈值
+            yolo_model.iou = 0.45  # IOU阈值
+            yolo_model.classes = None  # 所有类别
+            yolo_model.agnostic = False  # 类别无关NMS
+            yolo_model.multi_label = False
+            yolo_model.max_det = 1000  # 最大检测数
+            yolo_device = torch.device("cuda:0" if torch.cuda.is_available() and "cuda" in "cuda:0" else "cpu")
+            yolo_model.to(yolo_device)
+            logger.info("YOLOv5模型加载完成.")
+        model = yolo_model
 
         # 5. 检测图片，获取所有检测框
 
@@ -180,6 +184,10 @@ def detect_and_compare_local(chengyu, check_text, img_cv):
         ret = {"results": compare_results}
 
         logger.info(f"ret: {ret}")
+
+        end_time = time.time()
+
+        logger.info(f"检测和比较耗时: {end_time - start_time:.3f} 秒")
 
         return ret
     except Exception as e:
