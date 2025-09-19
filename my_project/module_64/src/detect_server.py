@@ -60,7 +60,7 @@ def text_to_image(char, font_path="simsun.ttc", image_size=(100, 100), font_size
 
 
 def check_img_sim_by_data(image1, image2) -> float:
-    onnx_model_path = "mhxy_text_sim_model_20250916.onnx"
+    onnx_model_path = "mhxy_text_sim_model_20250920_001307.onnx"
     ort_session = onnxruntime.InferenceSession(onnx_model_path)
 
     image1 = cv2.cvtColor(image1, cv2.COLOR_BGR2RGB)
